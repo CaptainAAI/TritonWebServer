@@ -14,6 +14,8 @@ On top of the original model list, config viewer and metrics, it can:
 
 This project is not affiliated with NVIDIA.
 
+![Models page](resources/screenshot_models.png)
+
 ## Features
 
 **Models page (`/repo`)**
@@ -29,11 +31,25 @@ This project is not affiliated with NVIDIA.
 - **Config**: the `config.pbtxt` on disk, or the config Triton loaded when the repository is not configured.
 - **Test** (image ensembles only): drop a JPEG or PNG, adjust the confidence and NMS IoU thresholds, and see the boxes, the Triton time (DALI pre-processing included) and the letterbox values.
 
+Overview of an image ensemble, with its pipeline:
+
+![Ensemble overview](resources/screenshot_ensemble.png)
+
+Test tab, running an image through `model1_image`:
+
+![Detection test](resources/screenshot_test.png)
+
+Statistics tab:
+
+![Model statistics](resources/screenshot_stats.png)
+
 **Add model (`/repo/new`)**
 - Templates for ONNX Runtime, TensorRT, PyTorch (TorchScript), Python, DALI and Ensemble.
 - Uploads the model file with a progress bar. The file is staged next to the repository and renamed into place, so Triton never sees a half-written file.
 - Optionally creates `<name>_image` as well: DALI pre-processing followed by the new model.
 - For the Ensemble template, picking a loaded YOLO model fills in the inputs, outputs and steps.
+
+![Add model](resources/screenshot_add.png)
 
 **Per-model actions**
 - **Upload / replace model file**: as a new version folder (the old version stays on disk for rollback) or overwriting a file in an existing version.
