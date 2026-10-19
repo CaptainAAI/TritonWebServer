@@ -31,7 +31,7 @@ Triton and the web UI are already running, so all you need is a browser.
 
 ### Set up a new Jetson
 
-Needs JetPack with Docker, the NVIDIA Container Toolkit and Node.js 20.9 or newer.
+Needs JetPack with Docker and the NVIDIA Container Toolkit. Node.js is installed by the script.
 
 ```bash
 git clone https://github.com/CaptainAAI/TritonWebServer.git ~/triton-inference-server-web-ui && cd ~/triton-inference-server-web-ui && ./deploy/install.sh
@@ -39,14 +39,23 @@ git clone https://github.com/CaptainAAI/TritonWebServer.git ~/triton-inference-s
 
 The script asks for your sudo password, then:
 
-1. creates `~/nvidiatriton/model_repository` and `~/nvidiatriton/disabled_models`, and adds the `preprocess` (DALI) model,
-2. copies [`deploy/compose.yaml`](deploy/compose.yaml) to `~/nvidiatriton/` and starts Triton with it,
-3. writes `.env.local`, installs the dependencies and builds the web UI,
-4. installs and starts the `tritonserver` systemd service, so the web UI starts at boot,
-5. prints the URL once Triton and the web UI answer.
+1. installs or updates Node.js to the latest LTS release for ARM64, with the latest npm (from nodejs.org, checksum verified, into `/usr/local`),
+2. creates `~/nvidiatriton/model_repository` and `~/nvidiatriton/disabled_models`, and adds the `preprocess` (DALI) model,
+3. copies [`deploy/compose.yaml`](deploy/compose.yaml) to `~/nvidiatriton/` and starts Triton with it,
+4. writes `.env.local`, installs the dependencies and builds the web UI,
+5. installs and starts the `tritonserver` systemd service, so the web UI starts at boot,
+6. prints the URL once Triton and the web UI answer.
 
 It is safe to run again, e.g. after a `git pull`: existing models, `compose.yaml` and
-`.env.local` are kept. Set `TRITON_DIR` to use another folder than `~/nvidiatriton`.
+`.env.local` are kept. Options, as environment variables:
+
+| Variable | Effect |
+|---|---|
+| `TRITON_DIR=/path` | Triton folder instead of `~/nvidiatriton` |
+| `NODE_VERSION=v24.22.0` | Install this Node.js version instead of the latest LTS |
+| `SKIP_NODE=1` | Leave Node.js and npm as they are |
+
+For example: `SKIP_NODE=1 ./deploy/install.sh`.
 
 ## Features
 
@@ -230,11 +239,11 @@ curl -X POST --data-binary @bus.jpg "http://<jetson-ip>:3000/api/models/model1_i
 
 ## Development
 
-Requires Node.js 20.9 or newer (Next.js 16). The Jetson runs Node.js 20.9.
+Requires Node.js 20.9 or newer (Next.js 16). `deploy/install.sh` keeps the Jetson on the latest LTS.
 
 ```bash
-git clone https://github.com/CaptainAAI/TritonVisionWebServer.git
-cd TritonVisionWebServer
+git clone https://github.com/CaptainAAI/TritonWebServer.git
+cd TritonWebServer
 npm install
 npm run dev
 ```

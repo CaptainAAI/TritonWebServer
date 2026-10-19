@@ -103,7 +103,7 @@ export function imageEnsembleConfig(model: string, io: ModelIO, name = `${model}
 # Used by TritonVision ConnectImage() / DetectImage().
 name: "${name}"
 platform: "ensemble"
-max_batch_size: 0         # no batching; the batch dim of 1 is written out in the shapes
+max_batch_size: 0         # ${io.maxBatchSize > 0 ? 'no batching' : `${model} has no batching`}; the batch dim of 1 is explicit
 
 input [
   {

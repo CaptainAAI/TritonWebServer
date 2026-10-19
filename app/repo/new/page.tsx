@@ -13,18 +13,20 @@ import { Ensemble, imageEnsembleConfig, ModelIO, parseModelIO, PREPROCESS_MODEL 
 
 const NAME_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
+// YOLO exported with a fixed batch of 1: no batching, the batch dim is part of the shapes.
 const tensors = `input [
   {
     name: "images"
     data_type: TYPE_FP32
-    dims: [3, 640, 640]
+    dims: [ 1, 3, 640, 640 ]
   }
 ]
+
 output [
   {
     name: "output0"
     data_type: TYPE_FP32
-    dims: [84, -1]
+    dims: [ 1, 6, 8400 ]   # 1, 4 + num_classes, 8400
   }
 ]`;
 
@@ -55,19 +57,19 @@ const platforms: Record<string, { label: string, fileName: string, header: strin
     label: 'ONNX Runtime',
     fileName: 'model.onnx',
     header: 'platform: "onnxruntime_onnx"',
-    body: `max_batch_size: 8\n${tensors}\ninstance_group [{ kind: KIND_GPU }]`,
+    body: `max_batch_size: 0\n\n${tensors}\n\ninstance_group [{ kind: KIND_GPU }]`,
   },
   tensorrt: {
     label: 'TensorRT',
     fileName: 'model.plan',
     header: 'platform: "tensorrt_plan"',
-    body: `max_batch_size: 8\n${tensors}\ninstance_group [{ kind: KIND_GPU }]`,
+    body: `max_batch_size: 0\n\n${tensors}\n\ninstance_group [{ kind: KIND_GPU }]`,
   },
   pytorch: {
     label: 'PyTorch (TorchScript)',
     fileName: 'model.pt',
     header: 'backend: "pytorch"',
-    body: `max_batch_size: 8\n${tensors.replace('"images"', '"INPUT__0"').replace('"output0"', '"OUTPUT__0"')}\ninstance_group [{ kind: KIND_GPU }]`,
+    body: `max_batch_size: 0\n\n${tensors.replace('"images"', '"INPUT__0"').replace('"output0"', '"OUTPUT__0"')}\n\ninstance_group [{ kind: KIND_GPU }]`,
   },
   python: {
     label: 'Python',
