@@ -16,6 +16,40 @@ This project is not affiliated with NVIDIA.
 
 ![Models page](resources/screenshot_models.png)
 
+## Quick start
+
+### Use the lab Jetson
+
+Triton and the web UI are already running, so all you need is a browser.
+
+1. Open **http://140.129.7.180:3000**.
+2. Click **Add model**, enter a name (e.g. `model5`), pick the platform and drop the `.onnx`, `.plan` or `.pt` file.
+3. Keep **Also create `model5_image`** ticked and click **Create model**.
+4. Wait about 5 seconds, until both models show **READY**.
+5. Open `model5_image`, go to the **Test** tab and drop a JPEG or PNG to check the detections.
+6. From code, call it with TritonVision: `ConnectImage("140.129.7.180:8001", "model5_image")`.
+
+### Set up a new Jetson
+
+Needs JetPack with Docker, the NVIDIA Container Toolkit and Node.js 20.9 or newer.
+
+```bash
+git clone https://github.com/CaptainAAI/TritonVisionWebServer.git ~/triton-inference-server-web-ui
+cd ~/triton-inference-server-web-ui
+./deploy/install.sh
+```
+
+The script asks for your sudo password, then:
+
+1. creates `~/nvidiatriton/model_repository` and `~/nvidiatriton/disabled_models`, and adds the `preprocess` (DALI) model,
+2. copies [`deploy/compose.yaml`](deploy/compose.yaml) to `~/nvidiatriton/` and starts Triton with it,
+3. writes `.env.local`, installs the dependencies and builds the web UI,
+4. installs and starts the `tritonserver` systemd service, so the web UI starts at boot,
+5. prints the URL once Triton and the web UI answer.
+
+It is safe to run again, e.g. after a `git pull`: existing models, `compose.yaml` and
+`.env.local` are kept. Set `TRITON_DIR` to use another folder than `~/nvidiatriton`.
+
 ## Features
 
 **Models page (`/repo`)**
@@ -65,6 +99,9 @@ Statistics tab:
 
 Despite its name, `tritonserver.service` runs the **web UI**, not Triton.
 
+The files for a new setup are in [`deploy/`](deploy/): `compose.yaml`, the `preprocess`
+model, the systemd unit template and `install.sh` (see [Quick start](#set-up-a-new-jetson)).
+
 Triton is started with `--model-control-mode=poll --repository-poll-secs=5`, so it picks
 up changes in the model repository within about 5 seconds.
 
@@ -80,10 +117,10 @@ Open the web UI at `http://<jetson-ip>:3000`.
 
 ### Common commands
 
-Deploy a code change:
+Deploy a code change (or run `./deploy/install.sh`, which does the same):
 ```bash
 cd ~/triton-inference-server-web-ui
-npm install
+npm ci
 npm run build
 sudo systemctl restart tritonserver
 ```

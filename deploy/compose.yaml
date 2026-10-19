@@ -1,0 +1,24 @@
+# Triton Inference Server for the web UI. install.sh copies this file to
+# ~/nvidiatriton/compose.yaml; the model repository is the folder next to it.
+#
+#   cd ~/nvidiatriton && sudo docker compose up -d
+#
+# Docker restarts the container after a crash or a reboot, until it is stopped
+# with `docker compose down` / `docker stop triton`.
+services:
+  triton:
+    image: nvcr.io/nvidia/tritonserver:26.08-py3
+    container_name: triton
+    runtime: nvidia
+    network_mode: host          # HTTP 8000, gRPC 8001, metrics 8002
+    restart: unless-stopped
+    volumes:
+      - ./model_repository:/models
+    command: >
+      tritonserver
+      --model-repository=/models
+      --model-control-mode=poll
+      --repository-poll-secs=5
+      --exit-on-error=false
+      --log-verbose=1
+      --log-info=true

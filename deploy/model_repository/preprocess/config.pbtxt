@@ -1,0 +1,27 @@
+name: "preprocess"
+backend: "dali"
+max_batch_size: 8
+
+input [
+  {
+    name: "ENCODED"
+    data_type: TYPE_UINT8
+    dims: [ -1 ]          # bytes of a JPEG/PNG file
+  }
+]
+
+# Same order as the pipeline's return values in 1/dali.py.
+output [
+  {
+    name: "images"
+    data_type: TYPE_FP32
+    dims: [ 3, 640, 640 ]
+  },
+  {
+    name: "LETTERBOX"
+    data_type: TYPE_FP32
+    dims: [ 5 ]           # scale, pad_x, pad_y, width, height
+  }
+]
+
+instance_group [{ kind: KIND_GPU }]

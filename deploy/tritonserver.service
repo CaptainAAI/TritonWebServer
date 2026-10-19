@@ -1,0 +1,18 @@
+# systemd unit for the web UI (not for Triton, which runs in Docker).
+# install.sh fills in the @...@ values and installs it as
+# /etc/systemd/system/tritonserver.service.
+[Unit]
+Description=Triton Inference Server Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@WORKDIR@
+Environment=NODE_ENV=production
+Environment=PATH=@NODE_DIR@:/usr/local/bin:/usr/bin:/bin
+ExecStart=@NPM@ start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
