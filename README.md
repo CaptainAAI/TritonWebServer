@@ -34,9 +34,7 @@ Triton and the web UI are already running, so all you need is a browser.
 Needs JetPack with Docker, the NVIDIA Container Toolkit and Node.js 20.9 or newer.
 
 ```bash
-git clone https://github.com/CaptainAAI/TritonVisionWebServer.git ~/triton-inference-server-web-ui
-cd ~/triton-inference-server-web-ui
-./deploy/install.sh
+git clone https://github.com/CaptainAAI/TritonWebServer.git ~/triton-inference-server-web-ui && cd ~/triton-inference-server-web-ui && ./deploy/install.sh
 ```
 
 The script asks for your sudo password, then:
