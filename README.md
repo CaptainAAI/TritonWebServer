@@ -96,6 +96,7 @@ Statistics tab:
 - **Upload / replace model file**: as a new version folder (the old version stays on disk for rollback) or overwriting a file in an existing version.
 - **Edit config**: writes `config.pbtxt` on disk in poll mode, or sends the config with a load request in explicit mode.
 - **Load / Reload / Unload**: see [Load and unload in poll mode](#load-and-unload-in-poll-mode). Unloading a model that loaded ensembles depend on asks whether to unload those ensembles too.
+- **Delete** (red bin icon, also on the model page): deletes the model folder from disk, or only one version when the model has several. It lists the ensembles that call the model, so they can be deleted with it. A model or version whose folder was deleted by hand no longer shows in the list either.
 
 ## Deployment on the Jetson
 
@@ -214,6 +215,257 @@ model_repository/
 4. Keep **Also create `model4_image`** ticked to get the ensemble.
 5. Save. Within a few seconds Triton loads both models, and `model4_image` gets a **Test** tab.
 
+### Converting a YOLO model to TensorRT
+
+A TensorRT engine (`model.plan`) runs fastest on the Jetson, but it only works with the
+TensorRT version that built it. Build it **inside the `triton` container**, so it always
+matches the Triton that runs it.
+
+**1. Export ONNX** from the trained `.pt` (on any PC with `pip install ultralytics`):
+
+```python
+from ultralytics import YOLO
+
+model = YOLO("ParticlesDetection_0112.pt")   # your trained model
+model.export(format="onnx", imgsz=640)        # writes ParticlesDetection_0112.onnx
+```
+
+Do not use `half=True` here. On a GPU it makes the ONNX input FP16, but `preprocess`
+produces FP32, so the `_image` ensemble does not work (on a CPU it is ignored). For FP16,
+use `--fp16` in step 3 instead: the engine then still takes and returns FP32.
+
+**2. Upload the ONNX** in the web UI: **Add model** → enter a name (e.g. `model5`) →
+platform **TensorRT** → drop the `.onnx` file. With TensorRT selected it is saved as
+`model5/1/model.onnx`. Set the `output0` dims in `config.pbtxt` to `[ 1, 4 + num_classes, 8400 ]`
+(e.g. `[ 1, 6, 8400 ]` for 2 classes), keep **Also create `model5_image`** ticked, and
+click **Create model**. The model shows UNAVAILABLE until step 3 is done.
+
+**3. Convert** on the Jetson (SSH):
+
+```bash
+sudo docker exec -it triton bash
+```
+
+then inside the container (replace `model5` with your model name):
+
+```bash
+/usr/src/tensorrt/bin/trtexec --onnx=/models/model5/1/model.onnx --saveEngine=/models/model5/1/model.plan
+```
+
+- Building takes a few minutes. Add `--fp16` for a faster, smaller engine.
+- At the end trtexec prints the input and output shapes; they must match `config.pbtxt`.
+- Type `exit` to leave the container. Within 5 seconds Triton loads `model5` and
+  `model5_image` (**READY**). If it stays UNAVAILABLE, click **Reload** in the web UI.
+- `model.onnx` may stay in the folder; Triton only loads `model.plan`.
+
+## Manual setup (without install.sh)
+
+These are the steps `install.sh` performs, for setting up by hand or for repairing one
+part. Run them on the Jetson as the normal user.
+
+**1. Check Docker and the NVIDIA runtime:**
+
+```bash
+docker --version
+sudo docker compose version
+sudo docker info | grep -i runtimes        # must list "nvidia"
+```
+
+**2. Create the folders, clone the web UI and copy the server files:**
+
+```bash
+mkdir -p ~/nvidiatriton/model_repository ~/nvidiatriton/disabled_models
+git clone https://github.com/CaptainAAI/TritonWebServer.git \
+    ~/triton-inference-server-web-ui
+cd ~/triton-inference-server-web-ui
+cp -r deploy/model_repository/preprocess ~/nvidiatriton/model_repository/
+cp deploy/compose.yaml ~/nvidiatriton/
+```
+
+**3. Start Triton:**
+
+```bash
+cd ~/nvidiatriton
+sudo docker compose pull                    # first time: downloads several GB
+sudo docker compose up -d
+sudo docker ps --filter name=triton         # STATUS must be "Up"
+curl -s -o /dev/null -w "%{http_code}\n" localhost:8000/v2/health/live   # 200
+```
+
+**4. Node.js** (skip if `node -v` already shows v20.9 or newer; the latest LTS is listed on nodejs.org):
+
+```bash
+node -v                                     # needs v20.9 or newer
+curl -fsSLO https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.gz
+sudo tar -xzf node-v24.22.0-linux-arm64.tar.gz -C /usr/local --strip-components=1
+node -v && npm -v
+```
+
+**5. Configure and build the web UI:**
+
+```bash
+cd ~/triton-inference-server-web-ui
+cat > .env.local <<EOF
+API_URL=http://127.0.0.1:8000
+MODEL_REPOSITORY_PATH=$HOME/nvidiatriton/model_repository
+MODEL_CONTROL_MODE=poll
+EOF
+npm ci
+npm run build
+npm start                                   # test, then stop with Ctrl+C
+```
+
+**6. Install the web UI as a service** that starts at boot (from the web UI folder):
+
+```bash
+sed -e "s|@USER@|$USER|" -e "s|@WORKDIR@|$PWD|" \
+    -e "s|@NODE_DIR@|/usr/local/bin|" -e "s|@NPM@|/usr/local/bin/npm|" \
+    deploy/tritonserver.service | sudo tee /etc/systemd/system/tritonserver.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tritonserver
+systemctl status tritonserver
+```
+
+> Create `~/nvidiatriton/model_repository` yourself before step 3. If Docker creates it,
+> the folder belongs to root and the web UI cannot write to it.
+
+## Logs and status
+
+| Task | Command (on the Jetson) |
+|---|---|
+| Is the Triton container running? | `sudo docker ps --filter name=triton` |
+| Triton log, live | `sudo docker logs -f triton` |
+| Triton errors of the last 10 minutes | `sudo docker logs --since 10m triton 2>&1 | grep -iE "error|fail"` |
+| Is Triton ready? (200 = every model loaded) | `curl -s -o /dev/null -w "%{http_code}\n" localhost:8000/v2/health/ready` |
+| State of every model | `curl -s -X POST localhost:8000/v2/repository/index` |
+| Inputs and outputs of one model | `curl -s localhost:8000/v2/models/model1` |
+| Open a shell in the container | `sudo docker exec -it triton bash` |
+| Restart Triton | `sudo docker restart triton` |
+| Is the web UI running? | `systemctl status tritonserver` |
+| Web UI log, live | `journalctl -u tritonserver -f` |
+| Web UI log of the last 10 minutes | `journalctl -u tritonserver --since "10 min ago"` |
+| Restart the web UI | `sudo systemctl restart tritonserver` |
+
+When a model does not load, the Triton log names the reason (e.g. a wrong tensor name or
+dims in `config.pbtxt`); the web UI shows the same reason in the Reason column.
+
+## Managing model folders
+
+```
+~/nvidiatriton/
+├── compose.yaml
+├── model_repository/        Triton loads everything in here (mounted as /models)
+│   ├── preprocess/
+│   │   ├── config.pbtxt
+│   │   └── 1/dali.py
+│   ├── model1/
+│   │   ├── config.pbtxt
+│   │   └── 1/model.plan
+│   └── model1_image/
+│       ├── config.pbtxt
+│       └── 1/                (empty, but required)
+├── disabled_models/         unloaded models: Triton does not see them
+├── .webui-uploads/          upload files while they are being received
+└── .webui-trash/            folders the web UI is deleting
+```
+
+Every change can be made by hand or in the web UI; Triton applies it within 5 seconds:
+
+| Task | By hand (in ~/nvidiatriton) | Web UI |
+|---|---|---|
+| Add a model | Create `model_repository/model6/config.pbtxt` and `model6/1/model.plan` | Add model |
+| Add a new version | Create `model6/2/` with the new `model.plan` (Triton serves the highest version) | Upload file → new version |
+| Unload | `mv model_repository/model6 disabled_models/` | Unload |
+| Load again | `mv disabled_models/model6 model_repository/` | Load |
+| Reload after a change | `touch model_repository/model6/config.pbtxt` | Reload |
+| Delete | `rm -rf model_repository/model6` (`sudo` if it has files owned by root) | Delete |
+| Back up | `cp -a ~/nvidiatriton/model_repository ~/backup/model_repository_$(date +%F)` | — |
+| Fix ownership | `sudo chown -R $USER:$USER ~/nvidiatriton` | — |
+
+- The folder name must be the same as `name:` in `config.pbtxt`.
+- Every model needs at least one version folder (`1/`), the ensembles too.
+- By default Triton serves only the highest version number. Delete broken version folders, or Triton keeps reporting them.
+- Files created inside the container belong to root (`model.plan` from trtexec, `__pycache__`). The web UI can still delete their folders; by hand, use `sudo rm -rf`.
+
+## Source code guide
+
+Pages run in the browser; files named `route.ts` under `app/api/` run on the Jetson and
+are the only parts that talk to Triton or touch the disk:
+page or component → `apiFetch("/api/…")` (`api/client.ts`) → `app/api/…/route.ts` →
+`api/server.ts` (Triton HTTP API) or `api/repository.ts` (model folders on disk).
+
+**Helpers (`api/`)**
+
+| File | Runs in | What it does |
+|---|---|---|
+| `api/server.ts` | Server side | fetchServer(): calls the Triton HTTP API at API_URL, with API_AUTH_HEADER. |
+| `api/repository.ts` | Server side | Everything that touches the model repository on disk: name and version checks, poll-mode load/unload (move to disabled_models, touch config.pbtxt), delete (move to .webui-trash), the upload staging folder. |
+| `api/detect.ts` | Server side | For the Test tab: JPEG/PNG check, building a binary Triton infer request, reading FP32 outputs, YOLO post-processing (port of TritonVision Postprocess). |
+| `api/client.ts` | Browser | apiFetch(): calls this app's /api routes and turns errors into messages; uploadModelFile(): upload with a progress bar. |
+
+**HTTP routes (`app/api/`)**
+
+| File | Method | What it does |
+|---|---|---|
+| `app/api/server/route.ts` | GET /api/server | Triton name, version, ready (app bar status). |
+| `app/api/models/route.ts` | POST /api/models | Model list from Triton; adds disabled models and hides versions whose folder is gone. |
+| `app/api/models/[model]/versions/[version]/route.ts` | GET | Config and statistics of one model version. |
+| `app/api/models/[model]/load/route.ts` | POST | Load or reload (poll mode: move back or touch config.pbtxt). |
+| `app/api/models/[model]/unload/route.ts` | POST | Unload (poll mode: move to disabled_models). |
+| `app/api/models/[model]/detect/route.ts` | POST | Runs a JPEG/PNG through an image ensemble and returns the detections. |
+| `app/api/ensembles/route.ts` | GET | Loaded ensembles and the models each step calls. |
+| `app/api/repository/route.ts` | GET | Model folders, versions and files on disk. |
+| `app/api/repository/[model]/route.ts` | POST / DELETE | Create a model folder / delete a model folder. |
+| `app/api/repository/[model]/config/route.ts` | GET / PUT | Read or replace config.pbtxt. |
+| `app/api/repository/[model]/versions/[version]/route.ts` | DELETE | Delete one version folder. |
+| `app/api/repository/[model]/versions/[version]/files/[file]/route.ts` | PUT | Upload a file into a version folder (streamed to disk). |
+
+**Pages (`app/`)**
+
+| File | URL | What it does |
+|---|---|---|
+| `app/layout.tsx` | (every page) | Root layout: fonts, theme, app bar. |
+| `app/page.tsx` | / | Redirects to /repo. |
+| `app/repo/page.tsx` | /repo | Models page: list, counters, filters, search, refresh every 10 s. |
+| `app/repo/new/page.tsx` | /repo/new | Add model: platform templates, file upload, config editor, image ensemble. |
+| `app/models/[model]/versions/[version]/page.tsx` | /models/… | Model page: summary, Overview / Statistics / Config / Test tabs, Upload, Unload, Delete. |
+| `app/models/[model]/versions/[version]/edit/page.tsx` | …/edit | Edit config: on disk (poll mode) or with a load request (explicit mode). |
+| `app/globals.css` |  | Tailwind CSS utilities. |
+
+**Components (`components/`)**
+
+| File | What it does |
+|---|---|
+| `components/AppBar.tsx` | Top bar: logo, Triton status, Models link, dark mode switch. |
+| `components/Providers.tsx` | MUI theme (light and dark colours) and the notification provider. |
+| `components/Notify.tsx` | useNotify(): short messages at the bottom of the screen. |
+| `components/ModelItem.tsx` | One row of the model list with its buttons. |
+| `components/StateChip.tsx` | Coloured state label (READY, UNAVAILABLE, DISABLED…). |
+| `components/TableRowsLoader.tsx` | Placeholder rows while the list loads. |
+| `components/UnloadDialog.tsx` | useUnload(): unload, warning about ensembles that call the model. |
+| `components/DeleteDialog.tsx` | useDelete(): delete a model or one version, optionally with its ensembles. |
+| `components/UploadDialog.tsx` | Upload or replace a model file, as a new version or overwriting one. |
+| `components/FileDrop.tsx` | Drag-and-drop file picker. |
+| `components/EnsembleInfo.tsx` | Pipeline card: the steps of an ensemble, or the ensembles that use a model. |
+| `components/DetectTest.tsx` | Test tab: send an image, adjust thresholds, draw the boxes, list the detections. |
+
+**Types, deployment and configuration**
+
+| File | What it does |
+|---|---|
+| `types/ensemble.ts` | Ensemble types, LETTERBOX, dependentsOf(), isImageEnsemble(), parseModelIO(), imageEnsembleConfig() (writes the <model>_image config). |
+| `types/model.ts`, `types/repository.ts` | Types of the model list and of /api/repository; formatBytes(). |
+| `deploy/install.sh` | One-command setup (section 4.3). |
+| `deploy/compose.yaml` | Triton container definition (section 3.1). |
+| `deploy/tritonserver.service` | systemd unit template for the web UI. |
+| `deploy/model_repository/preprocess/` | The DALI preprocess model (section 3.2). |
+| `package.json` | Dependencies and the scripts `dev`, `build`, `start`, `lint`. |
+| `next.config.js` | Base path (NEXT_PUBLIC_WEBUI_BASEPATH) and standalone output. |
+| `.env`, `.env.local` | Settings (section 4.4). |
+| `tsconfig.json`, `postcss.config.js`, `.eslintrc.json` | TypeScript (the @/ import alias), Tailwind and lint settings. |
+| `Dockerfile` | Builds the web UI as a container image (not used on the Jetson). |
+| `public/logo.png` | Logo in the app bar. |
+
 ## HTTP API
 
 The web UI's own routes, under `/api` (behind `NEXT_PUBLIC_WEBUI_BASEPATH` if set):
@@ -229,6 +481,8 @@ The web UI's own routes, under `/api` (behind `NEXT_PUBLIC_WEBUI_BASEPATH` if se
 | GET | `/api/ensembles` | Loaded ensembles and their steps |
 | GET | `/api/repository` | Model folders, versions and files on disk |
 | POST | `/api/repository/<model>` | Create a model folder. JSON body (optional): `{ "config": "...", "version": "1" }` |
+| DELETE | `/api/repository/<model>` | Delete a model folder (from the repository or `disabled_models`) |
+| DELETE | `/api/repository/<model>/versions/<version>` | Delete one version folder (not the last one) |
 | GET / PUT | `/api/repository/<model>/config` | Read or replace `config.pbtxt` (plain text) |
 | PUT | `/api/repository/<model>/versions/<version>/files/<file>` | Upload a file into a version folder (raw bytes) |
 

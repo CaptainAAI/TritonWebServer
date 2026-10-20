@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { checkConfig, checkVersion, errorResponse, exists, modelPath, RepositoryError } from '@/api/repository';
+import { checkConfig, checkVersion, deleteFolder, errorResponse, exists, findModelFolder, modelPath, RepositoryError } from '@/api/repository';
 
 // Creates a model folder. Body (all optional): { config: string, version: string }
 export async function POST(
@@ -32,6 +32,21 @@ export async function POST(
     }
 
     return Response.json({ success: true }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+// Deletes a model folder with all its versions, from the repository or disabled_models.
+// Triton unloads the model on its next poll.
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ model: string }> }
+) {
+  const { model } = await params;
+  try {
+    const leftover = await deleteFolder(await findModelFolder(model));
+    return Response.json({ success: true, leftover });
   } catch (error) {
     return errorResponse(error);
   }

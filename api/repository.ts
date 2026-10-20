@@ -127,3 +127,42 @@ export async function enableOrTouchModel(model: string): Promise<'enabled' | 'to
   await fs.utimes(await exists(config) ? config : dir, now, now);
   return 'touched';
 }
+
+// Deleted folders are first moved here (next to the repository, so the move is one
+// rename and Triton stops seeing the model at once), then removed.
+function getTrashPath() {
+  return path.join(path.dirname(getRepositoryPath()), '.webui-trash');
+}
+
+// Deletes a model folder or a version folder. Files that Triton's container created
+// (as root, e.g. __pycache__ or an engine built with trtexec) may not be deletable by
+// the web UI's user: the folder is then out of the repository already, and the error
+// says how to remove the rest. Returns the folder that is left over, if any.
+export async function deleteFolder(dir: string): Promise<string | null> {
+  const trash = path.join(getTrashPath(), `${path.basename(dir)}-${Date.now()}`);
+  await fs.mkdir(getTrashPath(), { recursive: true });
+  try {
+    await fs.rename(dir, trash);
+  } catch (error: any) {
+    if (error?.code === 'EACCES' || error?.code === 'EPERM') {
+      throw new RepositoryError(`No permission to delete ${dir} (owned by root). On the Jetson run: sudo rm -rf ${dir}`, 403);
+    }
+    throw error;
+  }
+  try {
+    await fs.rm(trash, { recursive: true, force: true });
+    return null;
+  } catch (error: any) {
+    if (error?.code === 'EACCES' || error?.code === 'EPERM') return trash;
+    throw error;
+  }
+}
+
+// Folder of a model, in the repository or (when unloaded in poll mode) in disabled_models.
+export async function findModelFolder(model: string) {
+  const inRepo = modelPath(model);
+  if (await exists(inRepo)) return inRepo;
+  const disabled = path.join(getDisabledPath(), checkName(model));
+  if (await exists(disabled)) return disabled;
+  throw new RepositoryError(`Model folder "${model}" not found`, 404);
+}

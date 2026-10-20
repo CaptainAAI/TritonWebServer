@@ -210,6 +210,11 @@ function NewModel() {
       setFileName(picked.name.endsWith('.dali') ? 'model.dali' : 'dali.py');
       return;
     }
+    if (platform === 'tensorrt' && picked.name.endsWith('.onnx')) {
+      // Kept as TensorRT: the ONNX file is converted to model.plan next to it with trtexec.
+      setFileName('model.onnx');
+      return;
+    }
     const match = Object.entries(platforms).find(([, p]) => picked.name.endsWith(p.fileName.slice(p.fileName.lastIndexOf('.'))));
     if (match && match[0] !== platform) handlePlatformChange(match[0]);
   };
@@ -347,7 +352,8 @@ function NewModel() {
                   value={fileName}
                   onChange={(e) => setFileName(e.target.value)}
                   error={!!fileNameError}
-                  helperText={fileNameError || `Stored as ${name || '<model>'}/${version || '<version>'}/${fileName}`}
+                  helperText={fileNameError || `Stored as ${name || '<model>'}/${version || '<version>'}/${fileName}`
+                    + (platform === 'tensorrt' && fileName.endsWith('.onnx') ? '. Then convert it to model.plan with trtexec (see README).' : '')}
                 />
               )}
             </Stack>

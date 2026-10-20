@@ -7,9 +7,11 @@ import { useRouter } from 'next/navigation';
 import EditIcon from '@mui/icons-material/Edit';
 import StopIcon from '@mui/icons-material/Stop';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import StateChip from '@/components/StateChip';
 import UploadDialog from '@/components/UploadDialog';
 import { useUnload } from '@/components/UnloadDialog';
+import { useDelete } from '@/components/DeleteDialog';
 import EnsembleInfo from '@/components/EnsembleInfo';
 import DetectTest from '@/components/DetectTest';
 import { apiFetch, errorMessage } from '@/api/client';
@@ -94,6 +96,7 @@ function ModelView(props: { params: Promise<{ model: string, version: string }> 
   const [activeTab, setActiveTab] = useState<number>(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const { unload, busy: isUnloading, dialog: unloadDialog } = useUnload(model, () => router.replace('/repo'));
+  const { ask: askDelete, dialog: deleteDialog } = useDelete(model, version, () => router.replace('/repo'));
 
   const getModel = useCallback(async () => {
     try {
@@ -181,6 +184,9 @@ function ModelView(props: { params: Promise<{ model: string, version: string }> 
               )}
               <Button onClick={unload} loading={isUnloading} variant="outlined" color="warning" startIcon={<StopIcon />}>
                 Unload
+              </Button>
+              <Button onClick={askDelete} variant="outlined" color="error" startIcon={<DeleteOutlineIcon />}>
+                Delete
               </Button>
             </Stack>
           </Stack>
@@ -291,6 +297,7 @@ function ModelView(props: { params: Promise<{ model: string, version: string }> 
 
       <UploadDialog model={model} open={uploadOpen} onClose={() => setUploadOpen(false)} onUploaded={getDisk} />
       {unloadDialog}
+      {deleteDialog}
 
       {config && error && (
         <Alert severity="warning" sx={{ mt: 3 }}>Refresh failed, showing last known data: {error}</Alert>

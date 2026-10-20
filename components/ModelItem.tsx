@@ -10,11 +10,13 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import { useRouter } from 'next/navigation';
 import StateChip from '@/components/StateChip';
 import { useNotify } from '@/components/Notify';
 import UploadDialog from '@/components/UploadDialog';
 import { useUnload } from '@/components/UnloadDialog';
+import { useDelete } from '@/components/DeleteDialog';
 import { apiFetch, errorMessage } from '@/api/client';
 
 // Describes what a load/unload did. In poll mode the server moves or touches folders
@@ -32,6 +34,7 @@ function ModelItem({ model, update }: { model: Model, update: () => Promise<void
   const [busy, setBusy] = useState<'load' | 'unload' | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const { unload, busy: unloading, dialog: unloadDialog } = useUnload(model.name, update);
+  const { ask: askDelete, dialog: deleteDialog } = useDelete(model.name, model.version || undefined, update);
 
   const run = async (action: 'load' | 'unload') => {
     setBusy(action);
@@ -115,9 +118,17 @@ function ModelItem({ model, update }: { model: Model, update: () => Promise<void
               </span>
             </Tooltip>
           )}
+          <Tooltip title="Delete">
+            <span>
+              <IconButton size="small" color="error" disabled={!!busy || unloading} onClick={askDelete}>
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Stack>
         <UploadDialog model={model.name} open={uploadOpen} onClose={() => setUploadOpen(false)} onUploaded={update} />
         {unloadDialog}
+        {deleteDialog}
       </TableCell>
     </TableRow>
   );

@@ -102,12 +102,18 @@ echo "using Node.js $(node -v), npm $(npm -v)"
 
 step "Model repository in $TRITON_DIR"
 mkdir -p "$TRITON_DIR/model_repository" "$TRITON_DIR/disabled_models"
-if [ -e "$TRITON_DIR/model_repository/preprocess" ]; then
-  echo "preprocess model already there, kept"
-else
-  cp -r "$DEPLOY_DIR/model_repository/preprocess" "$TRITON_DIR/model_repository/"
-  echo "added the preprocess (DALI) model"
-fi
+# Checked file by file: a preprocess folder can exist without its files (e.g. an
+# empty folder left after a cleanup). Existing files are never overwritten.
+PRE="$TRITON_DIR/model_repository/preprocess"
+for f in config.pbtxt 1/dali.py; do
+  if [ -f "$PRE/$f" ]; then
+    echo "preprocess/$f already there, kept"
+  else
+    mkdir -p "$(dirname "$PRE/$f")"
+    cp "$DEPLOY_DIR/model_repository/preprocess/$f" "$PRE/$f"
+    echo "added preprocess/$f (DALI pre-processing)"
+  fi
+done
 
 if [ -e "$TRITON_DIR/compose.yaml" ]; then
   cmp -s "$DEPLOY_DIR/compose.yaml" "$TRITON_DIR/compose.yaml" \
